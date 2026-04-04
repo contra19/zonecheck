@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { getTimezoneOffset } from 'date-fns-tz'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { formatInTimeZone } from 'date-fns-tz'
 import {
   getCurrentTimeInZone,
   encodeTeam,
@@ -9,7 +9,7 @@ import {
   TeamMember,
 } from '@/lib/timezone'
 
-const TIMEZONES = [
+const COMMON_TIMEZONES = [
   'America/New_York',
   'America/Chicago',
   'America/Denver',
@@ -32,6 +32,52 @@ const TIMEZONES = [
   'UTC',
 ]
 
+const REGION_ORDER = [
+  { label: 'Americas', prefix: 'America/' },
+  { label: 'Europe', prefix: 'Europe/' },
+  { label: 'Africa', prefix: 'Africa/' },
+  { label: 'Asia', prefix: 'Asia/' },
+  { label: 'Australia & Pacific', prefixes: ['Australia/', 'Pacific/'] },
+  { label: 'Other', prefixes: ['Antarctica/', 'Arctic/', 'Indian/', 'Atlantic/'] },
+] as const
+
+function getAllTimezones(): { common: string[]; groups: { label: string; zones: string[] }[] } {
+  let all: string[]
+  try {
+    all = Intl.supportedValuesOf('timeZone')
+  } catch {
+    all = COMMON_TIMEZONES
+  }
+
+  const commonSet = new Set(COMMON_TIMEZONES)
+  const grouped: { label: string; zones: string[] }[] = []
+  const used = new Set<string>()
+
+  for (const region of REGION_ORDER) {
+    const prefixes = 'prefixes' in region ? region.prefixes : [region.prefix]
+    const zones = all.filter(
+      (tz) => !commonSet.has(tz) && prefixes.some((p) => tz.startsWith(p))
+    )
+    if (zones.length > 0) {
+      grouped.push({ label: region.label, zones })
+      zones.forEach((z) => used.add(z))
+    }
+  }
+
+  // Catch-all for anything not matched (Etc/*, standalone like UTC, etc.)
+  const remaining = all.filter((tz) => !commonSet.has(tz) && !used.has(tz))
+  if (remaining.length > 0) {
+    const otherGroup = grouped.find((g) => g.label === 'Other')
+    if (otherGroup) {
+      otherGroup.zones.push(...remaining)
+    } else {
+      grouped.push({ label: 'Other', zones: remaining })
+    }
+  }
+
+  return { common: COMMON_TIMEZONES, groups: grouped }
+}
+
 function getHourStatus(hour: number): 'green' | 'amber' | 'red' {
   if (hour >= 9 && hour < 18) return 'green'
   if ((hour >= 7 && hour < 9) || (hour >= 18 && hour < 20)) return 'amber'
@@ -50,10 +96,6 @@ const STATUS_LABELS = {
   red: 'Outside working hours',
 } as const
 
-function getOffsetHours(tz: string): number {
-  return getTimezoneOffset(tz, new Date()) / 3_600_000
-}
-
 function formatTzAbbr(tz: string): string {
   try {
     const parts = Intl.DateTimeFormat('en-US', {
@@ -66,16 +108,55 @@ function formatTzAbbr(tz: string): string {
   }
 }
 
+/**
+ * Compute the integer hour offset of `tz` relative to `baseTz` at time `now`.
+ * Returns the number of hours to add to a baseTz hour to get the tz hour.
+ * Uses formatInTimeZone (proven correct for card display) so there's no
+ * sign-convention ambiguity.
+ */
+function getHourDiff(tz: string, baseTz: string, now: Date): number {
+  const baseH = parseInt(formatInTimeZone(now, baseTz, 'H'), 10)
+  const baseM = parseInt(formatInTimeZone(now, baseTz, 'm'), 10)
+  const tzH = parseInt(formatInTimeZone(now, tz, 'H'), 10)
+  const tzM = parseInt(formatInTimeZone(now, tz, 'm'), 10)
+
+  // Convert to total minutes, take difference, then round to nearest hour
+  const baseTotalMin = baseH * 60 + baseM
+  const tzTotalMin = tzH * 60 + tzM
+  let diffMin = tzTotalMin - baseTotalMin
+  // Normalize to [-720, +720) range (half-day) to handle day boundary
+  if (diffMin > 720) diffMin -= 1440
+  if (diffMin <= -720) diffMin += 1440
+  return Math.round(diffMin / 60)
+}
+
+function getLocalTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return 'UTC'
+  }
+}
+
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
 export default function Home() {
   const [team, setTeam] = useState<TeamMember[]>([])
   const [name, setName] = useState('')
-  const [timezone, setTimezone] = useState(TIMEZONES[0])
+  const [timezone, setTimezone] = useState('')
   const [label, setLabel] = useState('')
   const [tick, setTick] = useState(0)
   const [copied, setCopied] = useState<string | null>(null)
+  const [viewerTz, setViewerTz] = useState('UTC')
 
-  // Load team from URL on mount
+  const tzData = useMemo(() => getAllTimezones(), [])
+
+  // Detect local timezone and set defaults on mount
   useEffect(() => {
+    const localTz = getLocalTimezone()
+    setViewerTz(localTz)
+    setTimezone(localTz)
+
     const params = new URLSearchParams(window.location.search)
     const teamParam = params.get('team')
     if (teamParam) {
@@ -105,35 +186,44 @@ export default function Home() {
     setTeam((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // Precompute hour diffs for all members (relative to viewer)
+  const now = useMemo(() => new Date(), [tick])
+  const memberDiffs = useMemo(
+    () => team.map((m) => getHourDiff(m.timezone, viewerTz, now)),
+    [team, viewerTz, now]
+  )
+
+  function getMemberHourAtViewerHour(memberIndex: number, viewerHour: number): number {
+    return ((viewerHour + memberDiffs[memberIndex]) % 24 + 24) % 24
+  }
+
+  // Overlap hours: viewer-local hours where ALL members are in [9, 18)
+  const overlapHours = useMemo(() => {
+    if (team.length === 0) return []
+    return HOURS.filter((h) =>
+      memberDiffs.every((diff) => {
+        const mh = ((h + diff) % 24 + 24) % 24
+        return mh >= 9 && mh < 18
+      })
+    )
+  }, [team.length, memberDiffs])
+
   const copyMeetingInvite = () => {
     if (team.length === 0) return
-    // Find best overlap hour — first hour where all members are in 9-18
-    const viewerOffset = getOffsetHours(
-      Intl.DateTimeFormat().resolvedOptions().timeZone
-    )
-    let bestHour: number | null = null
-    for (let h = 0; h < 24; h++) {
-      const allWorking = team.every((m) => {
-        const memberOffset = getOffsetHours(m.timezone)
-        const memberHour = ((h + memberOffset - viewerOffset) % 24 + 24) % 24
-        return memberHour >= 9 && memberHour < 18
-      })
-      if (allWorking) {
-        bestHour = h
-        break
-      }
-    }
-    // Fallback: use noon in first member's timezone
-    if (bestHour === null) {
-      const firstOffset = getOffsetHours(team[0].timezone)
-      bestHour = ((12 - firstOffset + viewerOffset) % 24 + 24) % 24
+    // Find first overlap hour, or fall back to noon in first member's tz
+    let bestViewerHour: number
+    if (overlapHours.length > 0) {
+      // Pick the overlap hour closest to 10am viewer time
+      bestViewerHour = overlapHours.reduce((best, h) =>
+        Math.abs(h - 10) < Math.abs(best - 10) ? h : best
+      )
+    } else {
+      // Fallback: noon in first member's timezone, mapped to viewer
+      bestViewerHour = ((12 - memberDiffs[0]) % 24 + 24) % 24
     }
 
-    const parts = team.map((m) => {
-      const memberOffset = getOffsetHours(m.timezone)
-      const memberHour = Math.round(
-        ((bestHour! + memberOffset - viewerOffset) % 24 + 24) % 24
-      )
+    const parts = team.map((m, i) => {
+      const memberHour = ((bestViewerHour + memberDiffs[i]) % 24 + 24) % 24
       const hh = String(memberHour).padStart(2, '0')
       const abbr = formatTzAbbr(m.timezone)
       return `${hh}:00 ${abbr}`
@@ -153,33 +243,6 @@ export default function Home() {
     setCopied('share')
     setTimeout(() => setCopied(null), 2000)
   }
-
-  // Timeline computation
-  const viewerTz = typeof window !== 'undefined'
-    ? Intl.DateTimeFormat().resolvedOptions().timeZone
-    : 'UTC'
-  const viewerOffset = getOffsetHours(viewerTz)
-  const TIMELINE_START = 0
-  const TIMELINE_END = 24
-  const hours = Array.from(
-    { length: TIMELINE_END - TIMELINE_START },
-    (_, i) => i + TIMELINE_START
-  )
-
-  function getMemberHourAtViewerHour(memberTz: string, viewerHour: number): number {
-    const memberOffset = getOffsetHours(memberTz)
-    return ((viewerHour + memberOffset - viewerOffset) % 24 + 24) % 24
-  }
-
-  // Overlap hours: hours where ALL members are in 9-18
-  const overlapHours = team.length > 0
-    ? hours.filter((h) =>
-        team.every((m) => {
-          const mh = getMemberHourAtViewerHour(m.timezone, h)
-          return mh >= 9 && mh < 18
-        })
-      )
-    : []
 
   // Force re-render uses tick
   void tick
@@ -213,12 +276,23 @@ export default function Home() {
             <select
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
-              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 max-w-xs"
             >
-              {TIMEZONES.map((tz) => (
-                <option key={tz} value={tz}>
-                  {tz.replace(/_/g, ' ')}
-                </option>
+              <optgroup label="Common">
+                {tzData.common.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </optgroup>
+              {tzData.groups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.zones.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz.replace(/_/g, ' ')}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <input
@@ -300,8 +374,8 @@ export default function Home() {
 
             <div className="min-w-[640px]">
               {/* Hour labels */}
-              <div className="grid grid-cols-24 gap-px mb-1" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-                {hours.map((h) => (
+              <div className="grid gap-px mb-1" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
+                {HOURS.map((h) => (
                   <div
                     key={h}
                     className="text-[10px] text-gray-400 text-center"
@@ -321,11 +395,8 @@ export default function Home() {
                     className="flex-1 grid gap-px rounded overflow-hidden"
                     style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
                   >
-                    {hours.map((h) => {
-                      const memberHour = getMemberHourAtViewerHour(
-                        member.timezone,
-                        h
-                      )
+                    {HOURS.map((h) => {
+                      const memberHour = getMemberHourAtViewerHour(i, h)
                       const isOverlap = overlapHours.includes(h)
                       const status = getHourStatus(memberHour)
 
@@ -342,7 +413,7 @@ export default function Home() {
                         <div
                           key={h}
                           className={`h-6 ${cellColor}`}
-                          title={`${member.name}: ${String(Math.round(memberHour)).padStart(2, '0')}:00 local`}
+                          title={`${member.name}: ${String(memberHour).padStart(2, '0')}:00 local`}
                         />
                       )
                     })}
@@ -360,7 +431,7 @@ export default function Home() {
                     className="flex-1 grid gap-px rounded overflow-hidden"
                     style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
                   >
-                    {hours.map((h) => (
+                    {HOURS.map((h) => (
                       <div
                         key={h}
                         className={`h-6 ${
@@ -378,7 +449,7 @@ export default function Home() {
               <div className="flex flex-wrap gap-4 mt-3 text-[11px] text-gray-500 dark:text-gray-400">
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded-sm bg-emerald-300 dark:bg-emerald-700 inline-block" />
-                  Working (9am–6pm)
+                  Working (9am-6pm)
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded-sm bg-teal-400 dark:bg-teal-500 inline-block" />
@@ -386,7 +457,7 @@ export default function Home() {
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded-sm bg-amber-200 dark:bg-amber-800 inline-block" />
-                  Near hours (7–9am, 6–8pm)
+                  Near hours (7-9am, 6-8pm)
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-800 inline-block" />
