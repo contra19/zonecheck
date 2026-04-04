@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import Image from 'next/image'
 import { formatInTimeZone } from 'date-fns-tz'
 import {
   getCurrentTimeInZone,
@@ -797,6 +798,35 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="bg-gray-50 dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 py-6">
+        <div className="flex flex-col items-center gap-2">
+          <a
+            href="https://wolvryn.tech"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Wolvryn FORGE website"
+          >
+            <Image
+              src="/wolvryn_4k_fire_logo.png"
+              alt="Wolvryn FORGE"
+              width={160}
+              height={40}
+              className="h-10 w-auto"
+            />
+          </a>
+          <a
+            href="https://wolvryn.tech"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-gray-400 hover:text-gray-500 transition-colors"
+            style={{ fontSize: '12px' }}
+          >
+            Powered by <span style={{ color: '#FF6A00' }}>Wolvryn FORGE</span>
+          </a>
+        </div>
+      </footer>
     </div>
   )
 }

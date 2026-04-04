@@ -18,9 +18,17 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "ZoneCheck",
-  description: "See your team across time zones",
+  title: "ZoneCheck — See your team across time zones",
+  description:
+    "See your distributed team's working hours at a glance, find meeting overlap, and schedule across time zones with AI-powered timezone detection. Powered by Wolvryn FORGE.",
   manifest: "/manifest.json",
+  openGraph: {
+    title: "ZoneCheck — See your team across time zones",
+    description:
+      "See your distributed team's working hours at a glance, find meeting overlap, and schedule across time zones with AI-powered timezone detection. Powered by Wolvryn FORGE.",
+    url: "https://zonecheck.wolvryn.tech",
+    type: "website",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
