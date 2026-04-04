@@ -280,24 +280,48 @@ export default function Home() {
     )
   }, [team.length, memberDiffs])
 
-  // Best 1-hour window: highest availability, earliest if tied
-  const bestWindow = useMemo(() => {
+  // Ideal window: best hour where ALL members are in 9-18 (100% availability)
+  const idealWindow = useMemo(() => {
+    if (team.length < 2) return null
+    const fullHours = HOURS.filter((h) => availCounts[h] === team.length)
+    if (fullHours.length === 0) return null
+    const hour = fullHours.reduce((best, h) =>
+      Math.abs(h - 10) < Math.abs(best - 10) ? h : best
+    )
+    return { hour, count: team.length }
+  }, [team.length, availCounts])
+
+  // Best available window: highest availability across all 24 hours
+  const bestAvailable = useMemo(() => {
+    if (team.length < 2) return null
     const max = Math.max(...availCounts)
     if (max === 0) return null
-    const hour = availCounts.indexOf(max)
-    return { hour, count: max }
-  }, [availCounts])
+    const candidates = HOURS.filter((h) => availCounts[h] === max)
+    const hour = candidates.reduce((best, h) =>
+      Math.abs(h - 10) < Math.abs(best - 10) ? h : best
+    )
+    // Identify who is outside working hours at this hour
+    const offHours: { name: string; localHour: number; abbr: string }[] = []
+    team.forEach((m, i) => {
+      const mh = ((hour + memberDiffs[i]) % 24 + 24) % 24
+      if (mh < 9 || mh >= 18) {
+        offHours.push({
+          name: m.name,
+          localHour: mh,
+          abbr: formatTzAbbr(m.timezone),
+        })
+      }
+    })
+    return { hour, count: max, offHours }
+  }, [team, memberDiffs, availCounts])
 
   const copyMeetingInvite = () => {
     if (team.length === 0) return
     let bestViewerHour: number
-    if (bestWindow) {
-      // Pick hour with highest availability closest to 10am viewer time
-      const max = bestWindow.count
-      const candidates = HOURS.filter((h) => availCounts[h] === max)
-      bestViewerHour = candidates.reduce((best, h) =>
-        Math.abs(h - 10) < Math.abs(best - 10) ? h : best
-      )
+    if (idealWindow) {
+      bestViewerHour = idealWindow.hour
+    } else if (bestAvailable) {
+      bestViewerHour = bestAvailable.hour
     } else {
       bestViewerHour = ((12 - memberDiffs[0]) % 24 + 24) % 24
     }
@@ -588,18 +612,51 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Best window banner */}
-              {team.length > 1 && bestWindow && (
+              {/* Meeting window banners */}
+              {team.length > 1 && idealWindow && idealWindow.hour === bestAvailable?.hour && (
                 <div className="flex items-center gap-2 mt-2">
                   <div className="w-28 shrink-0" />
                   <p className="text-xs text-gray-600 dark:text-gray-300">
-                    Best window:{' '}
+                    <span className="font-semibold text-green-700 dark:text-green-400">Best window:</span>{' '}
                     <span className="font-semibold">
-                      {String(bestWindow.hour).padStart(2, '0')}:00{' '}
-                      {formatTzAbbr(viewerTz)}
+                      {String(idealWindow.hour).padStart(2, '0')}:00 {formatTzAbbr(viewerTz)}
                     </span>
-                    {' '}&middot;{' '}
-                    {bestWindow.count} of {team.length} available
+                    {' '}&middot; All in working hours
+                  </p>
+                </div>
+              )}
+              {team.length > 1 && idealWindow && idealWindow.hour !== bestAvailable?.hour && (
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="w-28 shrink-0" />
+                  <p className="text-xs text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-green-700 dark:text-green-400">Ideal window:</span>{' '}
+                    <span className="font-semibold">
+                      {String(idealWindow.hour).padStart(2, '0')}:00 {formatTzAbbr(viewerTz)}
+                    </span>
+                    {' '}&middot; All {team.length} in working hours
+                  </p>
+                </div>
+              )}
+              {team.length > 1 && bestAvailable && (!idealWindow || idealWindow.hour !== bestAvailable.hour) && (
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="w-28 shrink-0" />
+                  <p className="text-xs text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-teal-600 dark:text-teal-400">Best available:</span>{' '}
+                    <span className="font-semibold">
+                      {String(bestAvailable.hour).padStart(2, '0')}:00 {formatTzAbbr(viewerTz)}
+                    </span>
+                    {' '}&middot; {bestAvailable.count} of {team.length} available
+                    {bestAvailable.offHours.length > 0 && (
+                      <>
+                        {' '}&middot;{' '}
+                        {bestAvailable.offHours.map((o, i) => (
+                          <span key={i} className="text-amber-600 dark:text-amber-400">
+                            {i > 0 && ' · '}
+                            {o.name} takes {o.localHour < 9 ? 'an early' : 'a late'} call ({String(o.localHour).padStart(2, '0')}:00 {o.abbr})
+                          </span>
+                        ))}
+                      </>
+                    )}
                   </p>
                 </div>
               )}
