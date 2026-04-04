@@ -170,6 +170,9 @@ export default function Home() {
   const [viewerTz, setViewerTz] = useState('UTC')
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showInstallBanner, setShowInstallBanner] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [detecting, setDetecting] = useState(false)
+  const [detectMsg, setDetectMsg] = useState<{ text: string; type: 'warn' | 'error' } | null>(null)
 
   const tzData = useMemo(() => getAllTimezones(), [])
 
@@ -230,6 +233,35 @@ export default function Home() {
     setTeam((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const handleDetect = async () => {
+    const trimmed = pasteText.trim()
+    if (!trimmed) return
+    setDetecting(true)
+    setDetectMsg(null)
+    try {
+      const res = await fetch('/api/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setDetectMsg({ text: data.error, type: 'error' })
+      } else {
+        setName(data.name || '')
+        setTimezone(data.timezone || timezone)
+        setPasteText('')
+        if (data.confidence === 'low') {
+          setDetectMsg({ text: 'Best guess — please confirm the timezone.', type: 'warn' })
+        }
+      }
+    } catch {
+      setDetectMsg({ text: 'Could not reach the detection API.', type: 'error' })
+    } finally {
+      setDetecting(false)
+    }
+  }
+
   // Precompute hour diffs for all members (relative to viewer)
   const now = useMemo(() => new Date(), [tick])
   const memberDiffs = useMemo(
@@ -283,11 +315,21 @@ export default function Home() {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  const shareTeam = () => {
+  const shareTeam = async () => {
     if (team.length === 0) return
     const encoded = encodeTeam(team)
     const url = `${window.location.origin}${window.location.pathname}?team=${encoded}`
-    navigator.clipboard.writeText(url)
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'ZoneCheck Team', url })
+        return
+      } catch {
+        // User cancelled or share failed — fall through to clipboard
+      }
+    }
+
+    await navigator.clipboard.writeText(url)
     setCopied('share')
     setTimeout(() => setCopied(null), 2000)
   }
@@ -317,6 +359,40 @@ export default function Home() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+        {/* AI Paste Detection */}
+        <section className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-5">
+          <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+            Paste Anything
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <textarea
+              placeholder="Paste a name, location, Slack bio, email signature..."
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              rows={2}
+              className="flex-1 min-w-0 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+            />
+            <button
+              onClick={handleDetect}
+              disabled={detecting || !pasteText.trim()}
+              className="self-end rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 text-sm font-medium transition-colors whitespace-nowrap"
+            >
+              {detecting ? 'Detecting...' : 'Detect'}
+            </button>
+          </div>
+          {detectMsg && (
+            <p
+              className={`mt-2 text-xs ${
+                detectMsg.type === 'error'
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              {detectMsg.text}
+            </p>
+          )}
+        </section>
+
         {/* Add Member Form */}
         <section className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-5">
           <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
@@ -589,7 +665,7 @@ export default function Home() {
           <div className="text-center py-16 text-gray-400 dark:text-gray-600">
             <p className="text-lg">Add team members to get started</p>
             <p className="text-sm mt-1">
-              Compare working hours across time zones
+              Paste a name or location above to add someone instantly, or fill in the form manually.
             </p>
           </div>
         )}
