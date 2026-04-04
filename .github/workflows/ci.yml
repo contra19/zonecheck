@@ -25,3 +25,7 @@ jobs:
           # ANTHROPIC_API_KEY must be added as a GitHub Actions secret
           # Settings → Secrets and variables → Actions → New repository secret
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Trigger Vercel deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
