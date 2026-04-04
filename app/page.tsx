@@ -64,7 +64,6 @@ function getAllTimezones(): { common: string[]; groups: { label: string; zones: 
     }
   }
 
-  // Catch-all for anything not matched (Etc/*, standalone like UTC, etc.)
   const remaining = all.filter((tz) => !commonSet.has(tz) && !used.has(tz))
   if (remaining.length > 0) {
     const otherGroup = grouped.find((g) => g.label === 'Other')
@@ -108,23 +107,15 @@ function formatTzAbbr(tz: string): string {
   }
 }
 
-/**
- * Compute the integer hour offset of `tz` relative to `baseTz` at time `now`.
- * Returns the number of hours to add to a baseTz hour to get the tz hour.
- * Uses formatInTimeZone (proven correct for card display) so there's no
- * sign-convention ambiguity.
- */
 function getHourDiff(tz: string, baseTz: string, now: Date): number {
   const baseH = parseInt(formatInTimeZone(now, baseTz, 'H'), 10)
   const baseM = parseInt(formatInTimeZone(now, baseTz, 'm'), 10)
   const tzH = parseInt(formatInTimeZone(now, tz, 'H'), 10)
   const tzM = parseInt(formatInTimeZone(now, tz, 'm'), 10)
 
-  // Convert to total minutes, take difference, then round to nearest hour
   const baseTotalMin = baseH * 60 + baseM
   const tzTotalMin = tzH * 60 + tzM
   let diffMin = tzTotalMin - baseTotalMin
-  // Normalize to [-720, +720) range (half-day) to handle day boundary
   if (diffMin > 720) diffMin -= 1440
   if (diffMin <= -720) diffMin += 1440
   return Math.round(diffMin / 60)
@@ -138,7 +129,36 @@ function getLocalTimezone(): string {
   }
 }
 
+/** Shared grid style — extracted so every row uses the identical object ref */
+const GRID_COLS_STYLE = { gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }
+
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
+/**
+ * A single row of 24 hour-cells. The clip boundary (overflow-hidden + rounded)
+ * lives on a wrapper <div> rather than on the CSS-grid element itself. This
+ * prevents a Chrome/Safari compositing bug where `overflow:hidden` on a grid
+ * with fractional-px column widths can collapse cell backgrounds to 0 height.
+ */
+function TimelineRow({
+  cells,
+}: {
+  cells: { color: string; title: string }[]
+}) {
+  return (
+    <div className="flex-1 overflow-hidden rounded">
+      <div className="grid" style={GRID_COLS_STYLE}>
+        {cells.map((c, i) => (
+          <div
+            key={i}
+            className={`h-6 ${c.color}`}
+            title={c.title}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function Home() {
   const [team, setTeam] = useState<TeamMember[]>([])
@@ -148,10 +168,12 @@ export default function Home() {
   const [tick, setTick] = useState(0)
   const [copied, setCopied] = useState<string | null>(null)
   const [viewerTz, setViewerTz] = useState('UTC')
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [showInstallBanner, setShowInstallBanner] = useState(false)
 
   const tzData = useMemo(() => getAllTimezones(), [])
 
-  // Detect local timezone and set defaults on mount
+  // Detect local timezone, load team from URL, set up PWA install prompt
   useEffect(() => {
     const localTz = getLocalTimezone()
     setViewerTz(localTz)
@@ -163,6 +185,28 @@ export default function Home() {
       const decoded = decodeTeam(teamParam)
       if (decoded.length > 0) setTeam(decoded)
     }
+
+    // Only show install UI when not already installed as standalone
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    if (isStandalone) return
+
+    // Chrome/Android: capture beforeinstallprompt
+    const handlePrompt = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e as BeforeInstallPromptEvent)
+      setShowInstallBanner(true)
+    }
+    window.addEventListener('beforeinstallprompt', handlePrompt)
+
+    // iOS Safari (no beforeinstallprompt): detect and show manual instructions
+    const isIOS =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.userAgent.includes('Mac') && 'ontouchend' in document)
+    if (isIOS) {
+      setShowInstallBanner(true)
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handlePrompt)
   }, [])
 
   // Refresh clock every 60s
@@ -193,32 +237,27 @@ export default function Home() {
     [team, viewerTz, now]
   )
 
-  function getMemberHourAtViewerHour(memberIndex: number, viewerHour: number): number {
-    return ((viewerHour + memberDiffs[memberIndex]) % 24 + 24) % 24
-  }
-
   // Overlap hours: viewer-local hours where ALL members are in [9, 18)
-  const overlapHours = useMemo(() => {
-    if (team.length === 0) return []
-    return HOURS.filter((h) =>
+  const overlapSet = useMemo(() => {
+    if (team.length === 0) return new Set<number>()
+    const hours = HOURS.filter((h) =>
       memberDiffs.every((diff) => {
         const mh = ((h + diff) % 24 + 24) % 24
         return mh >= 9 && mh < 18
       })
     )
+    return new Set(hours)
   }, [team.length, memberDiffs])
 
   const copyMeetingInvite = () => {
     if (team.length === 0) return
-    // Find first overlap hour, or fall back to noon in first member's tz
+    const overlapArr = Array.from(overlapSet)
     let bestViewerHour: number
-    if (overlapHours.length > 0) {
-      // Pick the overlap hour closest to 10am viewer time
-      bestViewerHour = overlapHours.reduce((best, h) =>
+    if (overlapArr.length > 0) {
+      bestViewerHour = overlapArr.reduce((best, h) =>
         Math.abs(h - 10) < Math.abs(best - 10) ? h : best
       )
     } else {
-      // Fallback: noon in first member's timezone, mapped to viewer
       bestViewerHour = ((12 - memberDiffs[0]) % 24 + 24) % 24
     }
 
@@ -242,6 +281,16 @@ export default function Home() {
     navigator.clipboard.writeText(url)
     setCopied('share')
     setTimeout(() => setCopied(null), 2000)
+  }
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') {
+      setShowInstallBanner(false)
+    }
+    setInstallPrompt(null)
   }
 
   // Force re-render uses tick
@@ -374,52 +423,51 @@ export default function Home() {
 
             <div className="min-w-[640px]">
               {/* Hour labels */}
-              <div className="grid gap-px mb-1" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-                {HOURS.map((h) => (
-                  <div
-                    key={h}
-                    className="text-[10px] text-gray-400 text-center"
-                  >
-                    {String(h).padStart(2, '0')}
-                  </div>
-                ))}
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-28 shrink-0" />
+                <div className="flex-1 grid" style={GRID_COLS_STYLE}>
+                  {HOURS.map((h) => (
+                    <div
+                      key={h}
+                      className="text-[10px] text-gray-400 text-center"
+                    >
+                      {String(h).padStart(2, '0')}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Member rows */}
-              {team.map((member, i) => (
-                <div key={i} className="flex items-center gap-2 mb-1">
-                  <div className="w-28 shrink-0 text-xs text-gray-600 dark:text-gray-300 truncate text-right pr-1">
-                    {member.name}
-                  </div>
-                  <div
-                    className="flex-1 grid gap-px rounded overflow-hidden"
-                    style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
-                  >
-                    {HOURS.map((h) => {
-                      const memberHour = getMemberHourAtViewerHour(i, h)
-                      const isOverlap = overlapHours.includes(h)
-                      const status = getHourStatus(memberHour)
+              {team.map((member, i) => {
+                const cells = HOURS.map((h) => {
+                  const memberHour = ((h + memberDiffs[i]) % 24 + 24) % 24
+                  const isOverlap = overlapSet.has(h)
+                  const status = getHourStatus(memberHour)
 
-                      let cellColor = 'bg-gray-100 dark:bg-gray-800'
-                      if (status === 'green') {
-                        cellColor = isOverlap
-                          ? 'bg-teal-400 dark:bg-teal-500'
-                          : 'bg-emerald-300 dark:bg-emerald-700'
-                      } else if (status === 'amber') {
-                        cellColor = 'bg-amber-200 dark:bg-amber-800'
-                      }
+                  let color = 'bg-gray-200 dark:bg-gray-700'
+                  if (status === 'green') {
+                    color = isOverlap
+                      ? 'bg-teal-400 dark:bg-teal-500'
+                      : 'bg-emerald-300 dark:bg-emerald-700'
+                  } else if (status === 'amber') {
+                    color = 'bg-amber-200 dark:bg-amber-800'
+                  }
 
-                      return (
-                        <div
-                          key={h}
-                          className={`h-6 ${cellColor}`}
-                          title={`${member.name}: ${String(memberHour).padStart(2, '0')}:00 local`}
-                        />
-                      )
-                    })}
+                  return {
+                    color,
+                    title: `${member.name}: ${String(memberHour).padStart(2, '0')}:00 local`,
+                  }
+                })
+
+                return (
+                  <div key={i} className="flex items-center gap-2 mb-1">
+                    <div className="w-28 shrink-0 text-xs text-gray-600 dark:text-gray-300 truncate text-right pr-1">
+                      {member.name}
+                    </div>
+                    <TimelineRow cells={cells} />
                   </div>
-                </div>
-              ))}
+                )
+              })}
 
               {/* Overlap row */}
               {team.length > 1 && (
@@ -427,21 +475,16 @@ export default function Home() {
                   <div className="w-28 shrink-0 text-xs text-teal-600 dark:text-teal-400 font-medium text-right pr-1">
                     Overlap
                   </div>
-                  <div
-                    className="flex-1 grid gap-px rounded overflow-hidden"
-                    style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
-                  >
-                    {HOURS.map((h) => (
-                      <div
-                        key={h}
-                        className={`h-6 ${
-                          overlapHours.includes(h)
-                            ? 'bg-teal-500 dark:bg-teal-400'
-                            : 'bg-gray-100 dark:bg-gray-800'
-                        }`}
-                      />
-                    ))}
-                  </div>
+                  <TimelineRow
+                    cells={HOURS.map((h) => ({
+                      color: overlapSet.has(h)
+                        ? 'bg-teal-500 dark:bg-teal-400'
+                        : 'bg-gray-200 dark:bg-gray-700',
+                      title: overlapSet.has(h)
+                        ? `${String(h).padStart(2, '0')}:00 — all members working`
+                        : `${String(h).padStart(2, '0')}:00`,
+                    }))}
+                  />
                 </div>
               )}
 
@@ -460,7 +503,7 @@ export default function Home() {
                   Near hours (7-9am, 6-8pm)
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-800 inline-block" />
+                  <span className="w-3 h-3 rounded-sm bg-gray-200 dark:bg-gray-700 inline-block" />
                   Off hours
                 </span>
               </div>
@@ -496,6 +539,53 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      {/* PWA Install Banner */}
+      {showInstallBanner && (
+        <div className="fixed bottom-0 inset-x-0 z-50 p-4 pointer-events-none">
+          <div className="max-w-md mx-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 pointer-events-auto flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                Install ZoneCheck
+              </p>
+              {installPrompt ? (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={handleInstallClick}
+                    className="rounded-lg bg-teal-600 hover:bg-teal-700 text-white px-4 py-1.5 text-xs font-medium transition-colors"
+                  >
+                    Install App
+                  </button>
+                  <button
+                    onClick={() => setShowInstallBanner(false)}
+                    className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    Not now
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Tap the <strong>Share</strong> button then &ldquo;Add to Home
+                  Screen&rdquo; to install.
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setShowInstallBanner(false)}
+              className="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+// Type for the beforeinstallprompt event (not in lib.dom.d.ts)
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
