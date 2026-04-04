@@ -97,11 +97,22 @@ const STATUS_LABELS = {
 
 function formatTzAbbr(tz: string): string {
   try {
-    const parts = Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      timeZoneName: 'short',
-    }).formatToParts(new Date())
-    return parts.find((p) => p.type === 'timeZoneName')?.value ?? tz
+    const now = new Date()
+    // Try shortGeneric first (e.g. "JST", "CT") — avoids "GMT+9" for named zones
+    for (const style of ['shortGeneric', 'short'] as const) {
+      try {
+        const parts = Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          timeZoneName: style,
+        }).formatToParts(now)
+        const val = parts.find((p) => p.type === 'timeZoneName')?.value
+        if (val && !val.startsWith('GMT+') && !val.startsWith('GMT-')) return val
+        if (val && style === 'short') return val // last resort: return GMT+X from 'short'
+      } catch {
+        // shortGeneric not supported in this engine, try next
+      }
+    }
+    return tz
   } catch {
     return tz
   }
@@ -146,11 +157,13 @@ function TimelineRow({
   cells: { color: string; title: string }[]
 }) {
   return (
-    <div className="flex-1 overflow-hidden rounded">
+    <div className="flex-1 overflow-hidden rounded" role="row">
       <div className="grid" style={GRID_COLS_STYLE}>
         {cells.map((c, i) => (
           <div
             key={i}
+            role="cell"
+            aria-label={c.title}
             className={`h-6 ${c.color}`}
             title={c.title}
           />
@@ -389,11 +402,14 @@ export default function Home() {
             Paste Anything
           </h2>
           <div className="flex flex-col sm:flex-row gap-3">
+            <label htmlFor="paste-input" className="sr-only">Paste text for detection</label>
             <textarea
+              id="paste-input"
               placeholder="Paste a name, location, Slack bio, email signature..."
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
               rows={2}
+              aria-label="Paste a name, location, Slack bio, or email signature for AI detection"
               className="flex-1 min-w-0 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
             />
             <button
@@ -406,10 +422,11 @@ export default function Home() {
           </div>
           {detectMsg && (
             <p
+              role="alert"
               className={`mt-2 text-xs ${
                 detectMsg.type === 'error'
                   ? 'text-red-600 dark:text-red-400'
-                  : 'text-amber-600 dark:text-amber-400'
+                  : 'text-amber-700 dark:text-amber-300'
               }`}
             >
               {detectMsg.text}
@@ -423,17 +440,23 @@ export default function Home() {
             Add Team Member
           </h2>
           <div className="flex flex-col sm:flex-row gap-3">
+            <label htmlFor="member-name" className="sr-only">Team member name</label>
             <input
+              id="member-name"
               type="text"
               placeholder="Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addMember()}
+              aria-label="Team member name"
               className="flex-1 min-w-0 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
+            <label htmlFor="member-timezone" className="sr-only">Timezone</label>
             <select
+              id="member-timezone"
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
+              aria-label="Timezone"
               className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 max-w-xs"
             >
               <optgroup label="Common">
@@ -453,16 +476,20 @@ export default function Home() {
                 </optgroup>
               ))}
             </select>
+            <label htmlFor="member-label" className="sr-only">Team or role label</label>
             <input
+              id="member-label"
               type="text"
               placeholder="Label (optional)"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addMember()}
+              aria-label="Team or role label (optional)"
               className="sm:w-40 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
             <button
               onClick={addMember}
+              aria-label="Add team member"
               className="rounded-lg bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 text-sm font-medium transition-colors whitespace-nowrap"
             >
               Add
@@ -494,10 +521,12 @@ export default function Home() {
                     <span
                       className={`mt-1 w-3 h-3 rounded-full shrink-0 ${STATUS_COLORS[status]}`}
                       title={STATUS_LABELS[status]}
+                      aria-hidden="true"
                     />
                     <div className="min-w-0">
                       <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">
                         {member.name}
+                        <span className="sr-only"> — {STATUS_LABELS[status]}</span>
                       </div>
                       {member.label && (
                         <div className="text-xs text-gray-500 dark:text-gray-400">
@@ -605,7 +634,7 @@ export default function Home() {
 
                       return {
                         color,
-                        title: `${count} of ${total} available`,
+                        title: `Hour ${String(h).padStart(2, '0')}: ${count} of ${total} available`,
                       }
                     })}
                   />

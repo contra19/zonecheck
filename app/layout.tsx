@@ -26,6 +26,9 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "ZoneCheck",
   },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
   icons: {
     icon: "/icon-192.svg",
     apple: "/icon-192.svg",
