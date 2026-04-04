@@ -106,13 +106,13 @@ describe('encodeTeam / decodeTeam', () => {
       { broken: true },
       null,
     ])
-    const encoded = Buffer.from(mixed).toString('base64')
+    const encoded = btoa(unescape(encodeURIComponent(mixed)))
     const decoded = decodeTeam(encoded)
     expect(decoded).toEqual([{ name: 'Valid', timezone: 'UTC' }])
   })
 
   it('returns [] if decoded value is not an array', () => {
-    const encoded = Buffer.from(JSON.stringify({ name: 'X' })).toString('base64')
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify({ name: 'X' }))))
     expect(decodeTeam(encoded)).toEqual([])
   })
 })

@@ -38,16 +38,24 @@ export function getCurrentTimeInZone(
   }
 }
 
+function utf8ToBase64(str: string): string {
+  return btoa(unescape(encodeURIComponent(str)))
+}
+
+function base64ToUtf8(b64: string): string {
+  return decodeURIComponent(escape(atob(b64)))
+}
+
 export function encodeTeam(members: TeamMember[]): string {
   const json = JSON.stringify(members)
-  const base64 = Buffer.from(json, 'utf-8').toString('base64')
+  const base64 = utf8ToBase64(json)
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 export function decodeTeam(param: string): TeamMember[] {
   try {
     const base64 = param.replace(/-/g, '+').replace(/_/g, '/')
-    const json = Buffer.from(base64, 'base64').toString('utf-8')
+    const json = base64ToUtf8(base64)
     const parsed = JSON.parse(json)
     if (!Array.isArray(parsed)) return []
     return parsed.filter(
