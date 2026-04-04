@@ -237,24 +237,33 @@ export default function Home() {
     [team, viewerTz, now]
   )
 
-  // Overlap hours: viewer-local hours where ALL members are in [9, 18)
-  const overlapSet = useMemo(() => {
-    if (team.length === 0) return new Set<number>()
-    const hours = HOURS.filter((h) =>
-      memberDiffs.every((diff) => {
+  // Per-hour availability count: how many members are in [9, 18) at each viewer-local hour
+  const availCounts = useMemo(() => {
+    if (team.length === 0) return HOURS.map(() => 0)
+    return HOURS.map((h) =>
+      memberDiffs.reduce((count, diff) => {
         const mh = ((h + diff) % 24 + 24) % 24
-        return mh >= 9 && mh < 18
-      })
+        return count + (mh >= 9 && mh < 18 ? 1 : 0)
+      }, 0)
     )
-    return new Set(hours)
   }, [team.length, memberDiffs])
+
+  // Best 1-hour window: highest availability, earliest if tied
+  const bestWindow = useMemo(() => {
+    const max = Math.max(...availCounts)
+    if (max === 0) return null
+    const hour = availCounts.indexOf(max)
+    return { hour, count: max }
+  }, [availCounts])
 
   const copyMeetingInvite = () => {
     if (team.length === 0) return
-    const overlapArr = Array.from(overlapSet)
     let bestViewerHour: number
-    if (overlapArr.length > 0) {
-      bestViewerHour = overlapArr.reduce((best, h) =>
+    if (bestWindow) {
+      // Pick hour with highest availability closest to 10am viewer time
+      const max = bestWindow.count
+      const candidates = HOURS.filter((h) => availCounts[h] === max)
+      bestViewerHour = candidates.reduce((best, h) =>
         Math.abs(h - 10) < Math.abs(best - 10) ? h : best
       )
     } else {
@@ -441,12 +450,12 @@ export default function Home() {
               {team.map((member, i) => {
                 const cells = HOURS.map((h) => {
                   const memberHour = ((h + memberDiffs[i]) % 24 + 24) % 24
-                  const isOverlap = overlapSet.has(h)
+                  const allAvailable = availCounts[h] === team.length
                   const status = getHourStatus(memberHour)
 
                   let color = 'bg-gray-200 dark:bg-gray-700'
                   if (status === 'green') {
-                    color = isOverlap
+                    color = allAvailable
                       ? 'bg-teal-400 dark:bg-teal-500'
                       : 'bg-emerald-300 dark:bg-emerald-700'
                   } else if (status === 'amber') {
@@ -469,22 +478,53 @@ export default function Home() {
                 )
               })}
 
-              {/* Overlap row */}
+              {/* Availability heatmap row */}
               {team.length > 1 && (
                 <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                  <div className="w-28 shrink-0 text-xs text-teal-600 dark:text-teal-400 font-medium text-right pr-1">
-                    Overlap
+                  <div className="w-28 shrink-0 text-xs text-green-700 dark:text-green-400 font-medium text-right pr-1">
+                    Availability
                   </div>
                   <TimelineRow
-                    cells={HOURS.map((h) => ({
-                      color: overlapSet.has(h)
-                        ? 'bg-teal-500 dark:bg-teal-400'
-                        : 'bg-gray-200 dark:bg-gray-700',
-                      title: overlapSet.has(h)
-                        ? `${String(h).padStart(2, '0')}:00 — all members working`
-                        : `${String(h).padStart(2, '0')}:00`,
-                    }))}
+                    cells={HOURS.map((h) => {
+                      const count = availCounts[h]
+                      const total = team.length
+                      const pct = count / total
+
+                      let color: string
+                      if (pct === 0) {
+                        color = 'bg-red-200 dark:bg-red-900'
+                      } else if (pct <= 0.33) {
+                        color = 'bg-green-100 dark:bg-green-900'
+                      } else if (pct <= 0.66) {
+                        color = 'bg-green-200 dark:bg-green-800'
+                      } else if (pct < 1) {
+                        color = 'bg-green-400 dark:bg-green-600'
+                      } else {
+                        color = 'bg-green-600 dark:bg-green-400'
+                      }
+
+                      return {
+                        color,
+                        title: `${count} of ${total} available`,
+                      }
+                    })}
                   />
+                </div>
+              )}
+
+              {/* Best window banner */}
+              {team.length > 1 && bestWindow && (
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="w-28 shrink-0" />
+                  <p className="text-xs text-gray-600 dark:text-gray-300">
+                    Best window:{' '}
+                    <span className="font-semibold">
+                      {String(bestWindow.hour).padStart(2, '0')}:00{' '}
+                      {formatTzAbbr(viewerTz)}
+                    </span>
+                    {' '}&middot;{' '}
+                    {bestWindow.count} of {team.length} available
+                  </p>
                 </div>
               )}
 
@@ -495,16 +535,31 @@ export default function Home() {
                   Working (9am-6pm)
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm bg-teal-400 dark:bg-teal-500 inline-block" />
-                  Overlap
-                </span>
-                <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded-sm bg-amber-200 dark:bg-amber-800 inline-block" />
                   Near hours (7-9am, 6-8pm)
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded-sm bg-gray-200 dark:bg-gray-700 inline-block" />
                   Off hours
+                </span>
+                <span className="flex items-center gap-1 border-l border-gray-300 dark:border-gray-600 pl-4">
+                  Availability (% of team):
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded-sm bg-red-200 dark:bg-red-900 inline-block" />
+                  None
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded-sm bg-green-200 dark:bg-green-800 inline-block" />
+                  Some
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded-sm bg-green-400 dark:bg-green-600 inline-block" />
+                  Most
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded-sm bg-green-600 dark:bg-green-400 inline-block" />
+                  All
                 </span>
               </div>
             </div>
