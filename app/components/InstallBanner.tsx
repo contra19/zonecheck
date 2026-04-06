@@ -1,5 +1,8 @@
 'use client'
 
+import { useEffect } from 'react'
+import { track } from '@vercel/analytics'
+
 /** The `beforeinstallprompt` event isn't in lib.dom.d.ts — declare it locally. */
 export interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>
@@ -13,6 +16,18 @@ type InstallBannerProps = {
 }
 
 export function InstallBanner({ installPrompt, onInstall, onDismiss }: InstallBannerProps) {
+  // Track successful PWA installs (fires when the OS confirms the install)
+  useEffect(() => {
+    const handleInstalled = () => track('pwa_installed')
+    window.addEventListener('appinstalled', handleInstalled)
+    return () => window.removeEventListener('appinstalled', handleInstalled)
+  }, [])
+
+  const handleInstallClick = () => {
+    track('pwa_install_prompted')
+    onInstall()
+  }
+
   return (
     <div className="fixed bottom-0 inset-x-0 z-50 p-4 pointer-events-none">
       <div className="max-w-md mx-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 pointer-events-auto flex items-start gap-3">
@@ -23,7 +38,7 @@ export function InstallBanner({ installPrompt, onInstall, onDismiss }: InstallBa
           {installPrompt ? (
             <div className="mt-2 flex gap-2">
               <button
-                onClick={onInstall}
+                onClick={handleInstallClick}
                 className="rounded-lg bg-teal-600 hover:bg-teal-700 text-white px-4 py-1.5 text-xs font-medium transition-colors"
               >
                 Install App
