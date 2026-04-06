@@ -143,3 +143,45 @@ export function getLocalTimezone(): string {
 export function wrapHour(h: number): number {
   return ((h % 24) + 24) % 24
 }
+
+/**
+ * Format an (hour, minute) pair as a time string in either 12-hour or
+ * 24-hour clock. This is the single source of truth for time rendering
+ * across the app — every component that displays a clock value uses it.
+ *
+ * 12h examples: "9:00 AM", "12:30 PM", "11:49 PM"
+ * 24h examples: "09:00", "12:30", "23:49"
+ */
+export function formatTime(hour: number, minute: number, use12h: boolean): string {
+  const mm = String(minute).padStart(2, '0')
+  if (!use12h) {
+    return `${String(hour).padStart(2, '0')}:${mm}`
+  }
+  const period = hour >= 12 ? 'PM' : 'AM'
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12
+  return `${displayHour}:${mm} ${period}`
+}
+
+/**
+ * Compact hour-of-day label for the timeline axis. Returns the bare number
+ * in 24h mode ("00".."23") and a short 12h variant in 12h mode where only
+ * 12a/12p carry an a/p suffix and the rest are bare digits ("1".."11").
+ */
+export function formatHourLabel(hour: number, use12h: boolean): string {
+  if (!use12h) return String(hour).padStart(2, '0')
+  if (hour === 0) return '12a'
+  if (hour === 12) return '12p'
+  return String(hour % 12)
+}
+
+/**
+ * Detect whether the user's locale prefers a 12-hour clock by default.
+ * Falls back to true (12-hour) if detection fails.
+ */
+export function detectLocaleUses12h(): boolean {
+  try {
+    return Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12 ?? true
+  } catch {
+    return true
+  }
+}

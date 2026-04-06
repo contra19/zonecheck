@@ -3,11 +3,19 @@
 import {
   GRID_COLS_STYLE,
   HOURS,
+  NEAR_AFTER_END,
+  NEAR_BEFORE_START,
   WORK_END,
   WORK_START,
 } from '@/lib/constants'
 import { TeamMember } from '@/lib/timezone'
-import { formatTzAbbr, getHourStatus, wrapHour } from '@/lib/timezone-utils'
+import {
+  formatHourLabel,
+  formatTime,
+  formatTzAbbr,
+  getHourStatus,
+  wrapHour,
+} from '@/lib/timezone-utils'
 import { TimelineRow } from './TimelineRow'
 
 export type WindowSummary = { hour: number; count: number }
@@ -18,6 +26,7 @@ export type BestAvailableSummary = WindowSummary & {
 type TimelineProps = {
   team: TeamMember[]
   viewerTz: string
+  use12h: boolean
   memberDiffs: number[]
   availCounts: number[]
   idealWindow: WindowSummary | null
@@ -32,21 +41,16 @@ function availabilityColor(pct: number): string {
   return 'bg-green-600 dark:bg-green-400'
 }
 
-/** Format an hour-of-day (0-23) as "7:00 PM" using 12-hour clock with AM/PM. */
-function formatHour12(hour: number): string {
-  const period = hour >= 12 ? 'PM' : 'AM'
-  const displayHour = hour % 12 === 0 ? 12 : hour % 12
-  return `${displayHour}:00 ${period}`
-}
-
 export function Timeline({
   team,
   viewerTz,
+  use12h,
   memberDiffs,
   availCounts,
   idealWindow,
   bestAvailable,
 }: TimelineProps) {
+  const viewerAbbr = formatTzAbbr(viewerTz)
   const showBothBanners =
     team.length > 1 &&
     idealWindow !== null &&
@@ -78,7 +82,7 @@ export function Timeline({
           <div className="flex-1 grid" style={GRID_COLS_STYLE}>
             {HOURS.map((h) => (
               <div key={h} className="text-[10px] text-gray-400 text-center">
-                {String(h).padStart(2, '0')}
+                {formatHourLabel(h, use12h)}
               </div>
             ))}
           </div>
@@ -102,7 +106,7 @@ export function Timeline({
 
             return {
               color,
-              title: `${member.name}: ${String(memberHour).padStart(2, '0')}:00 local`,
+              title: `${member.name}: ${formatTime(memberHour, 0, use12h)} local`,
             }
           })
 
@@ -126,10 +130,9 @@ export function Timeline({
               cells={HOURS.map((h) => {
                 const count = availCounts[h]
                 const total = team.length
-                const viewerAbbr = formatTzAbbr(viewerTz)
                 return {
                   color: availabilityColor(count / total),
-                  title: `${formatHour12(h)} ${viewerAbbr} · ${count} of ${total} available`,
+                  title: `${formatTime(h, 0, use12h)} ${viewerAbbr} · ${count} of ${total} available`,
                 }
               })}
             />
@@ -145,7 +148,7 @@ export function Timeline({
                 Best window:
               </span>{' '}
               <span className="font-semibold">
-                {String(idealWindow.hour).padStart(2, '0')}:00 {formatTzAbbr(viewerTz)}
+                {formatTime(idealWindow.hour, 0, use12h)} {viewerAbbr}
               </span>
               {' '}&middot; All in working hours
             </p>
@@ -161,7 +164,7 @@ export function Timeline({
                 Ideal window:
               </span>{' '}
               <span className="font-semibold">
-                {String(idealWindow.hour).padStart(2, '0')}:00 {formatTzAbbr(viewerTz)}
+                {formatTime(idealWindow.hour, 0, use12h)} {viewerAbbr}
               </span>
               {' '}&middot; All {team.length} in working hours
             </p>
@@ -177,7 +180,7 @@ export function Timeline({
                 Best available:
               </span>{' '}
               <span className="font-semibold">
-                {String(bestAvailable.hour).padStart(2, '0')}:00 {formatTzAbbr(viewerTz)}
+                {formatTime(bestAvailable.hour, 0, use12h)} {viewerAbbr}
               </span>
               {' '}&middot; {bestAvailable.count} of {team.length} available
               {bestAvailable.offHours.length > 0 && (
@@ -187,7 +190,7 @@ export function Timeline({
                     <span key={i} className="text-amber-600 dark:text-amber-400">
                       {i > 0 && ' · '}
                       {o.name} takes {o.localHour < WORK_START ? 'an early' : 'a late'} call
-                      {' '}({String(o.localHour).padStart(2, '0')}:00 {o.abbr})
+                      {' '}({formatTime(o.localHour, 0, use12h)} {o.abbr})
                     </span>
                   ))}
                 </>
@@ -200,11 +203,12 @@ export function Timeline({
         <div className="flex flex-wrap gap-4 mt-3 text-[11px] text-gray-500 dark:text-gray-400">
           <span className="flex items-center gap-1">
             <span className="w-3 h-3 rounded-sm bg-emerald-300 dark:bg-emerald-700 inline-block" />
-            Working ({WORK_START}am-{WORK_END - 12}pm)
+            Working ({formatTime(WORK_START, 0, use12h)}–{formatTime(WORK_END, 0, use12h)})
           </span>
           <span className="flex items-center gap-1">
             <span className="w-3 h-3 rounded-sm bg-amber-200 dark:bg-amber-800 inline-block" />
-            Near hours (7-9am, 6-8pm)
+            Near hours ({formatTime(NEAR_BEFORE_START, 0, use12h)}–{formatTime(WORK_START, 0, use12h)},{' '}
+            {formatTime(WORK_END, 0, use12h)}–{formatTime(NEAR_AFTER_END, 0, use12h)})
           </span>
           <span className="flex items-center gap-1">
             <span className="w-3 h-3 rounded-sm bg-gray-200 dark:bg-gray-700 inline-block" />

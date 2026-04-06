@@ -2,17 +2,21 @@
 
 import { STATUS_LABELS } from '@/lib/constants'
 import { getCurrentTimeInZone, TeamMember } from '@/lib/timezone'
-import { getHourStatus } from '@/lib/timezone-utils'
+import { formatTime, getHourStatus } from '@/lib/timezone-utils'
 
 type TeamMemberCardProps = {
   member: TeamMember
+  use12h: boolean
   onRemove: () => void
 }
 
-export function TeamMemberCard({ member, onRemove }: TeamMemberCardProps) {
+export function TeamMemberCard({ member, use12h, onRemove }: TeamMemberCardProps) {
   const info = getCurrentTimeInZone(member.timezone)
-  const hour = info ? parseInt(info.time.split(':')[0], 10) : -1
+  const [hourStr, minuteStr] = info ? info.time.split(':') : ['-1', '0']
+  const hour = parseInt(hourStr, 10)
+  const minute = parseInt(minuteStr, 10)
   const status = hour >= 0 ? getHourStatus(hour) : 'red'
+  const displayTime = info ? formatTime(hour, minute, use12h) : '--:--'
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 relative group">
@@ -34,7 +38,7 @@ export function TeamMemberCard({ member, onRemove }: TeamMemberCardProps) {
                 status === 'green'
                   ? '#16a34a'
                   : status === 'amber'
-                    ? '#ca8a04'
+                    ? '#facc15'
                     : '#dc2626',
               display: 'inline-block',
               flexShrink: 0,
@@ -51,7 +55,7 @@ export function TeamMemberCard({ member, onRemove }: TeamMemberCardProps) {
           </div>
         )}
         <div className="text-2xl font-mono font-bold text-gray-900 dark:text-gray-100 mt-1 ml-5">
-          {info?.time ?? '--:--'}
+          {displayTime}
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 ml-5">
           {member.timezone.replace(/_/g, ' ')} &middot; {info?.offset ?? ''}

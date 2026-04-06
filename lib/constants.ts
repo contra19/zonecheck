@@ -73,7 +73,7 @@ export type HourStatus = 'green' | 'amber' | 'red'
 /** Status dot background classes used on member cards. */
 export const STATUS_COLORS: Record<HourStatus, string> = {
   green: 'bg-emerald-500',
-  amber: 'bg-amber-400',
+  amber: 'bg-yellow-400',
   red: 'bg-red-500',
 }
 

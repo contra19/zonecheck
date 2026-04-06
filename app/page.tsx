@@ -10,6 +10,8 @@ import {
 } from '@/lib/constants'
 import { encodeTeam, decodeTeam, TeamMember } from '@/lib/timezone'
 import {
+  detectLocaleUses12h,
+  formatTime,
   formatTzAbbr,
   getAllTimezones,
   getHourDiff,
@@ -36,6 +38,8 @@ function pickClosestTo10am(hours: number[]): number {
   return hours.reduce((best, h) => (Math.abs(h - 10) < Math.abs(best - 10) ? h : best))
 }
 
+const TIME_FORMAT_KEY = 'zonecheck-time-format'
+
 export default function Home() {
   const [team, setTeam] = useState<TeamMember[]>([])
   const [name, setName] = useState('')
@@ -49,6 +53,7 @@ export default function Home() {
   const [pasteText, setPasteText] = useState('')
   const [detecting, setDetecting] = useState(false)
   const [detectMsg, setDetectMsg] = useState<DetectMessage | null>(null)
+  const [use12h, setUse12h] = useState(true)
 
   const tzData = useMemo(() => getAllTimezones(), [])
 
@@ -57,6 +62,14 @@ export default function Home() {
     const localTz = getLocalTimezone()
     setViewerTz(localTz)
     setTimezone(localTz)
+
+    // Restore time format preference from localStorage, fall back to locale
+    const stored = localStorage.getItem(TIME_FORMAT_KEY)
+    if (stored === '12h' || stored === '24h') {
+      setUse12h(stored === '12h')
+    } else {
+      setUse12h(detectLocaleUses12h())
+    }
 
     const params = new URLSearchParams(window.location.search)
     const teamParam = params.get('team')
@@ -203,14 +216,13 @@ export default function Home() {
 
     const parts = team.map((m, i) => {
       const memberHour = wrapHour(bestViewerHour + memberDiffs[i])
-      const hh = String(memberHour).padStart(2, '0')
-      return `${hh}:00 ${formatTzAbbr(m.timezone)}`
+      return `${formatTime(memberHour, 0, use12h)} ${formatTzAbbr(m.timezone)}`
     })
 
     navigator.clipboard.writeText(`Meeting at ${parts.join(' / ')}`)
     setCopied('invite')
     setTimeout(() => setCopied(null), TOAST_DURATION_MS)
-  }, [team, idealWindow, bestAvailable, memberDiffs])
+  }, [team, idealWindow, bestAvailable, memberDiffs, use12h])
 
   const shareTeam = useCallback(async () => {
     if (team.length === 0) return
@@ -231,6 +243,15 @@ export default function Home() {
     setTimeout(() => setCopied(null), TOAST_DURATION_MS)
   }, [team])
 
+  const setTimeFormat = useCallback((to12h: boolean) => {
+    setUse12h(to12h)
+    try {
+      localStorage.setItem(TIME_FORMAT_KEY, to12h ? '12h' : '24h')
+    } catch {
+      // localStorage unavailable — fail silently
+    }
+  }, [])
+
   const handleInstallClick = useCallback(async () => {
     if (!installPrompt) return
     installPrompt.prompt()
@@ -244,11 +265,39 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 font-[family-name:var(--font-geist-sans)]">
       <header className="bg-teal-600 text-white py-6 px-4 shadow-md">
-        <div className="max-w-5xl mx-auto">
-          <h1 className="text-2xl font-bold tracking-tight">ZoneCheck</h1>
-          <p className="text-teal-100 text-sm mt-1">
-            See your team across time zones
-          </p>
+        <div className="max-w-5xl mx-auto flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">ZoneCheck</h1>
+            <p className="text-teal-100 text-sm mt-1">
+              See your team across time zones
+            </p>
+          </div>
+          <div
+            role="group"
+            aria-label="Time format"
+            className="inline-flex rounded-full bg-teal-700/60 p-0.5 text-xs font-medium shrink-0"
+          >
+            <button
+              type="button"
+              onClick={() => setTimeFormat(true)}
+              aria-pressed={use12h}
+              className={`px-3 py-1 rounded-full transition-colors ${
+                use12h ? 'bg-white text-teal-700' : 'text-teal-100 hover:text-white'
+              }`}
+            >
+              12h
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeFormat(false)}
+              aria-pressed={!use12h}
+              className={`px-3 py-1 rounded-full transition-colors ${
+                !use12h ? 'bg-white text-teal-700' : 'text-teal-100 hover:text-white'
+              }`}
+            >
+              24h
+            </button>
+          </div>
         </div>
       </header>
 
@@ -286,6 +335,7 @@ export default function Home() {
               <TeamMemberCard
                 key={i}
                 member={member}
+                use12h={use12h}
                 onRemove={() => removeMember(i)}
               />
             ))}
@@ -296,6 +346,7 @@ export default function Home() {
           <Timeline
             team={team}
             viewerTz={viewerTz}
+            use12h={use12h}
             memberDiffs={memberDiffs}
             availCounts={availCounts}
             idealWindow={idealWindow}
