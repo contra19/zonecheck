@@ -32,6 +32,13 @@ function availabilityColor(pct: number): string {
   return 'bg-green-600 dark:bg-green-400'
 }
 
+/** Format an hour-of-day (0-23) as "7:00 PM" using 12-hour clock with AM/PM. */
+function formatHour12(hour: number): string {
+  const period = hour >= 12 ? 'PM' : 'AM'
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12
+  return `${displayHour}:00 ${period}`
+}
+
 export function Timeline({
   team,
   viewerTz,
@@ -119,9 +126,10 @@ export function Timeline({
               cells={HOURS.map((h) => {
                 const count = availCounts[h]
                 const total = team.length
+                const viewerAbbr = formatTzAbbr(viewerTz)
                 return {
                   color: availabilityColor(count / total),
-                  title: `Hour ${String(h).padStart(2, '0')}: ${count} of ${total} available`,
+                  title: `${formatHour12(h)} ${viewerAbbr} · ${count} of ${total} available`,
                 }
               })}
             />

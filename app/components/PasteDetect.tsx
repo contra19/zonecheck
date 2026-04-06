@@ -20,7 +20,7 @@ export function PasteDetect({
   return (
     <section className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-5">
       <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-        Paste Anything
+        Add by AI
       </h2>
       <div className="flex flex-col sm:flex-row gap-3">
         <label htmlFor="paste-input" className="sr-only">

@@ -261,6 +261,14 @@ export default function Home() {
           onDetect={handleDetect}
         />
 
+        <div className="flex items-center gap-3" aria-hidden="true">
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+          <span className="text-gray-400 dark:text-gray-600 uppercase tracking-wider" style={{ fontSize: '11px' }}>
+            or
+          </span>
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+        </div>
+
         <AddMemberForm
           name={name}
           setName={setName}
