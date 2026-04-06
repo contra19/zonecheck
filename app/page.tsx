@@ -39,6 +39,8 @@ function pickClosestTo10am(hours: number[]): number {
 }
 
 const TIME_FORMAT_KEY = 'zonecheck-time-format'
+const TEAM_STORAGE_KEY = 'zonecheck-last-team'
+const SAVED_INDICATOR_MS = 2000
 
 export default function Home() {
   const [team, setTeam] = useState<TeamMember[]>([])
@@ -54,6 +56,8 @@ export default function Home() {
   const [detecting, setDetecting] = useState(false)
   const [detectMsg, setDetectMsg] = useState<DetectMessage | null>(null)
   const [use12h, setUse12h] = useState(true)
+  const [hydrated, setHydrated] = useState(false)
+  const [showSavedIndicator, setShowSavedIndicator] = useState(false)
 
   const tzData = useMemo(() => getAllTimezones(), [])
 
@@ -71,12 +75,35 @@ export default function Home() {
       setUse12h(detectLocaleUses12h())
     }
 
+    // Restore team — URL ?team= param wins over localStorage. Either way,
+    // the URL is cleaned up so the address bar stays tidy.
     const params = new URLSearchParams(window.location.search)
     const teamParam = params.get('team')
     if (teamParam) {
       const decoded = decodeTeam(teamParam)
-      if (decoded.length > 0) setTeam(decoded)
+      if (decoded.length > 0) {
+        setTeam(decoded)
+        try {
+          localStorage.setItem(TEAM_STORAGE_KEY, encodeTeam(decoded))
+        } catch {
+          // localStorage unavailable — fail silently
+        }
+      }
+      // Clear the team query param so reloads don't keep replaying it
+      const cleanUrl = window.location.pathname + window.location.hash
+      window.history.replaceState(null, '', cleanUrl)
+    } else {
+      try {
+        const stored = localStorage.getItem(TEAM_STORAGE_KEY)
+        if (stored) {
+          const decoded = decodeTeam(stored)
+          if (decoded.length > 0) setTeam(decoded)
+        }
+      } catch {
+        // localStorage unavailable — fail silently
+      }
     }
+    setHydrated(true)
 
     // Skip install prompts when already running standalone
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
@@ -106,6 +133,24 @@ export default function Home() {
     const id = setInterval(() => setTick((t) => t + 1), CLOCK_REFRESH_MS)
     return () => clearInterval(id)
   }, [])
+
+  // Auto-save team to localStorage on every change (skipped during initial
+  // hydration so we don't overwrite a freshly-restored team with an empty one).
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      if (team.length === 0) {
+        localStorage.removeItem(TEAM_STORAGE_KEY)
+      } else {
+        localStorage.setItem(TEAM_STORAGE_KEY, encodeTeam(team))
+        setShowSavedIndicator(true)
+        const id = setTimeout(() => setShowSavedIndicator(false), SAVED_INDICATOR_MS)
+        return () => clearTimeout(id)
+      }
+    } catch {
+      // localStorage unavailable — fail silently
+    }
+  }, [team, hydrated])
 
   const addMember = useCallback(() => {
     const trimmed = name.trim()
@@ -340,6 +385,17 @@ export default function Home() {
               />
             ))}
           </section>
+        )}
+
+        {team.length > 0 && (
+          <div
+            className={`text-center text-[11px] text-gray-400 dark:text-gray-600 transition-opacity duration-500 ${
+              showSavedIndicator ? 'opacity-100' : 'opacity-0'
+            }`}
+            aria-live="polite"
+          >
+            ✓ Team saved
+          </div>
         )}
 
         {team.length > 0 && (

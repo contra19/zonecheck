@@ -10,9 +10,11 @@ A live timezone overlap tool for distributed teams. Add your team members, see e
 
 - **Live clocks with DST awareness** — every member's current local time, refreshed every minute, with daylight-saving offsets handled automatically
 - **Availability heatmap timeline** — a 24-hour view of who's working when, color-coded by how many of the team is available at each hour
-- **AI paste detection** — paste a name, Slack bio, email signature, or just a city name and Claude figures out the timezone
-- **Smart meeting suggestions** — finds the ideal window where everyone is in their working hours, plus a "best available" fallback that highlights who'd be taking an off-hours call
-- **Shareable team URLs** — encode your team into a URL and send it to anyone; opening the link restores the full team
+- **AI timezone detection** — paste a name, Slack bio, email signature, or just a city name and Claude figures out the timezone automatically
+- **Smart meeting suggestions** — finds the ideal window where everyone is in working hours, plus a "best available" fallback showing exactly who takes an early or late call and at what local time
+- **12h/24h time format toggle** — switch between 12-hour and 24-hour display across all times in the app — member clocks, timeline labels, tooltips, banners, and meeting invite output. Auto-detected from your locale and persisted across sessions
+- **Auto-saved team** — your last team is automatically saved and restored on page refresh, no account required. Shared URLs always take priority over saved teams
+- **Shareable team URLs** — encode your entire team into a URL and send it to anyone; opening the link restores the full team instantly
 - **PWA installable** — add to home screen on iOS or install as a standalone app on desktop/Android
 - **Full IANA timezone database** — every zone supported by the browser, grouped by region with a "Common" shortlist on top
 
@@ -48,12 +50,16 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Running Tests
-
 ```bash
 npm test
 ```
 
-14 Jest unit tests covering timezone math, DST boundaries, UTC and offset edge cases, invalid timezone handling, and the team encode/decode round-trip.
+35 Jest unit tests across 2 test suites:
+
+- **lib/timezone.test.ts** — 14 tests covering timezone math, DST boundaries, UTC and offset edge cases, invalid timezone handling, and team encode/decode round-trips
+- **lib/timezone-utils.test.ts** — 21 tests covering time formatting (12h/24h), hour label generation, midnight/noon edge cases, and zero-padding behavior
+
+Test quality verified with mutation testing — intentional bugs introduced into each function confirmed the relevant tests catch real failures before restoration.
 
 ## CI/CD
 

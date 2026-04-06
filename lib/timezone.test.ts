@@ -61,6 +61,38 @@ describe('getCurrentTimeInZone', () => {
     expect(london).not.toBeNull()
     expect(london!.offset).toMatch(/^UTC\+0[01]:00$/)
   })
+
+  describe('isDST flag at fixed dates', () => {
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    // Use raw UTC millisecond timestamps so fake-timers doesn't interpret them
+    // through an already-fake Date constructor.
+    const JULY_2024 = Date.UTC(2024, 6, 15, 12, 0, 0)
+    const JANUARY_2024 = Date.UTC(2024, 0, 15, 12, 0, 0)
+
+    it('returns isDST=true for America/New_York in July', () => {
+      jest.useFakeTimers({ now: JULY_2024 })
+      const result = getCurrentTimeInZone('America/New_York')
+      expect(result).not.toBeNull()
+      expect(result!.isDST).toBe(true)
+    })
+
+    it('returns isDST=true for Europe/London in July', () => {
+      jest.useFakeTimers({ now: JULY_2024 })
+      const result = getCurrentTimeInZone('Europe/London')
+      expect(result).not.toBeNull()
+      expect(result!.isDST).toBe(true)
+    })
+
+    it('returns isDST=false for America/New_York in January', () => {
+      jest.useFakeTimers({ now: JANUARY_2024 })
+      const result = getCurrentTimeInZone('America/New_York')
+      expect(result).not.toBeNull()
+      expect(result!.isDST).toBe(false)
+    })
+  })
 })
 
 describe('encodeTeam / decodeTeam', () => {
