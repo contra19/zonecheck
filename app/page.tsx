@@ -276,11 +276,14 @@ export default function Home() {
     }
   }
 
-  // Precompute hour diffs for all members (relative to viewer)
-  const now = useMemo(() => new Date(), [tick])
+  // Precompute hour diffs for all members (relative to viewer).
+  // Diffs are integer hours and don't change minute-to-minute, so no tick dep
+  // is needed — only team or viewerTz changes recompute. Card clock displays
+  // call getCurrentTimeInZone() directly on each render, so they still refresh
+  // on every tick.
   const memberDiffs = useMemo(
-    () => team.map((m) => getHourDiff(m.timezone, viewerTz, now)),
-    [team, viewerTz, now]
+    () => team.map((m) => getHourDiff(m.timezone, viewerTz, new Date())),
+    [team, viewerTz]
   )
 
   // Per-hour availability count: how many members are in [9, 18) at each viewer-local hour
@@ -809,7 +812,7 @@ export default function Home() {
             aria-label="Wolvryn FORGE website"
           >
             <Image
-              src="/wolvryn_4k_fire_logo.png"
+              src="/wolvryn_forge_logo.png"
               alt="Wolvryn FORGE"
               width={160}
               height={40}
