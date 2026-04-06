@@ -26,6 +26,14 @@ jobs:
           # Settings → Secrets and variables → Actions → New repository secret
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-      - name: Trigger Vercel deploy
+      # Deploys are handled by the Vercel CLI below. Three GitHub Actions secrets are required:
+      #   VERCEL_TOKEN      — Vercel Account Settings → Tokens → Create token
+      #   VERCEL_PROJECT_ID — prj_fdxv5up2q4C2wZsKtTifJeQZI2tu
+      #   VERCEL_ORG_ID     — Vercel Account Settings → General
+      - name: Deploy to Vercel
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}?target=production"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
