@@ -1,6 +1,10 @@
 ---
 name: wolvryn-forge-security
 description: Security principles for all Wolvryn FORGE products. Identity trust boundaries, database layer rules, secrets management, auth gating, and input validation. Use alongside wolvryn-forge core when doing security-related work, running security audits, adding auth flows, changing database schemas, or handling secrets. Non-negotiable standards.
+metadata:
+  skill_version: "1.0"
+  source_repo: "wolvryn-skills"
+  source_commit: "b1abde1"
 ---
 
 # Wolvryn FORGE — Security Standards

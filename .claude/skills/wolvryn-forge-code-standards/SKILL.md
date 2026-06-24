@@ -1,6 +1,10 @@
 ---
 name: wolvryn-forge-code-standards
 description: Coding standards for all Wolvryn FORGE products. Universal principles (modularity, dependency isolation, naming by intent, error handling, no magic values) plus default-stack (TypeScript / Next.js / React) conventions. Use alongside wolvryn-forge core when writing code, reviewing code, or running audits. Triggers when writing new code, refactoring, or discussing code quality.
+metadata:
+  skill_version: "1.0"
+  source_repo: "wolvryn-skills"
+  source_commit: "b1abde1"
 ---
 
 # Wolvryn FORGE — Code Standards

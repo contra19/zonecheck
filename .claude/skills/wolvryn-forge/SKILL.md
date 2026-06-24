@@ -1,6 +1,10 @@
 ---
 name: wolvryn-forge
-description: Core development identity and philosophy for all Wolvryn FORGE products. This is the foundation skill — it loads on every session for every Wolvryn project. Covers fix philosophy, separation of duties (Chat vs Code), living-documentation discipline and single source of truth, commit format, versioning, and required project structure. Triggers on any reference to a Wolvryn project, "let's build", "start a new session", "continue working on", or any FORGE product name.
+description: Core development identity and philosophy for all Wolvryn FORGE products. This is the foundation skill — it loads on every session for every Wolvryn project. Covers fix philosophy, separation of duties (Chat vs Code), living-documentation discipline and single source of truth, commit format, versioning, required project structure, and skill architecture. Triggers on any reference to a Wolvryn project, "let's build", "start a new session", "continue working on", or any FORGE product name.
+metadata:
+  skill_version: "1.1"
+  source_repo: "wolvryn-skills"
+  source_commit: "b1abde1"
 ---
 
 # Wolvryn FORGE — Core Standards
@@ -166,6 +170,7 @@ trust is worse than no document — it costs you time *and* misleads you.
 | **ARCHITECTURE.md** (`docs/`) | *How the system works now*, synthesized: current structure, module graph, data flow, and a data-model / data-dictionary section (every table and field's canonical meaning, who writes it, what reads it, and why it exists) | Mutable. Always reflects *now*. Edited in place |
 | **CLAUDE.md** (repo root) | Architectural *rules and constraints* Claude Code must obey; module-boundary laws; coding standards | Mutable. Changes when a rule changes |
 | **SESSION.md** (repo root) | *Where work stands now*: current phase/sub-step, the last thing completed, the next task, open decisions awaiting Rob, and any in-flight context needed to resume — the portable resume-point. Owns working state ONLY; never decisions (ADRs) or current architecture (ARCHITECTURE.md) — it *points* at those | Mutable, committed. Updated as work progresses; read first at session start |
+| **Skills** (`.claude/skills/<name>/`) | Reusable *how-to* instruction — enterprise (vendored) and app-specific. Holds instruction only, never generated output | Enterprise (`wolvryn-*`): mutable in `wolvryn-skills` only. App (`<app>-*`): mutable in-repo. See Skill Architecture |
 | **CHANGELOG.md** | The release record (semver) | Append-only per release |
 | **GitHub Issues** | The backlog | Living |
 
@@ -264,7 +269,112 @@ road.
 | `CHANGELOG.md` | Canonical release record (semver) | Repo root |
 | `README.md` | Project overview, stack, status | Repo root |
 | `.env.example` | All env vars with placeholders | Repo root (if project has secrets) |
-| Skills | Project-specific Claude Code context | `.claude/skills/` |
+| Skills | Enterprise (vendored, `wolvryn-*`) + app-specific (`<app>-*`) Claude instruction — see **Skill Architecture** | `.claude/skills/<name>/` |
+| Generated state | Dated outputs a run produces (audit records, reports) — never inside a skill folder | `docs/` |
+
+---
+
+## Skill Architecture
+
+Skills are the reusable instruction layer that travels with every Wolvryn project. They
+follow the open Agent Skills specification (agentskills.io) so they validate with standard
+tooling and stay portable across agents. Two tiers, one structure, one hard boundary.
+
+### Two tiers — enterprise vs app
+
+| Tier | Prefix | Scope | Source of truth | How it enters a repo |
+|------|--------|-------|-----------------|----------------------|
+| **Enterprise** | `wolvryn-*` | Cross-product. Loads in every Wolvryn repo. Wolvryn-wide judgment (FORGE core, code/security/testing/deploy standards). | The `wolvryn-skills` repo — one canonical copy | Vendored: copied into the app's `.claude/skills/`. Never hand-edited in an app repo. |
+| **App** | `<app>-*` | Single product. Loads only in that app's repo. App-specific process, parameters, output formats. | The app's own repo | Authored in place, committed normally. |
+
+**The prefix is the discriminator.** `wolvryn-*` means vendored — its truth lives in
+`wolvryn-skills`; to change it, edit canonical and re-sync, never edit the app copy.
+`<app>-*` means local — authored and owned in the app repo. This naming rule is what lets
+a re-sync overwrite enterprise skills safely without touching app skills: the name tells
+the tooling which is which.
+
+**App skills funnel down from enterprise skills; they never duplicate them.** An app skill
+*references* the enterprise standard for criteria and adds only what is app-specific. It
+points up; it does not restate. Duplicated criteria is the exact drift this discipline
+exists to prevent — the single-source-of-truth rule applies to skills as much as to docs.
+
+### Structure (Agent Skills spec)
+
+```
+.claude/skills/<name>/
+├── SKILL.md              # Required. Lean instruction + frontmatter.
+├── references/           # Optional. Detail loaded on demand (plural directory name).
+│   └── <topic>.md
+├── scripts/              # Optional. Executable helpers.
+└── assets/               # Optional. Templates, data, resources.
+```
+
+- **Directory form only.** The directory name MUST equal the frontmatter `name`. Flat
+  `<name>-SKILL.md` files are NOT loaded as skills. (Flat copies may exist outside the
+  loader path purely as upload/transport convenience, but they are derived from the
+  directory, never the source of truth.)
+- **Keep `SKILL.md` lean** — target under 500 lines / ~5,000 tokens. Push bulky detail
+  (decision tables, worked examples, output formats) into `references/`, which the agent
+  loads only when the task needs it. Progressive disclosure: metadata always, body on
+  activation, references on demand.
+- **Frontmatter `name`:** lowercase alphanumeric and hyphens only; no leading, trailing,
+  or consecutive hyphens; ≤64 chars; matches the directory.
+- **Frontmatter `description`:** what the skill does AND when to use it; ≤1024 chars;
+  keyword-rich so the agent triggers it correctly.
+- **Validate** a new or changed skill with `skills-ref validate ./<name>` before committing.
+
+### Instruction vs state — the hard boundary
+
+A skill folder holds **instruction only** — reusable and version-stable: `SKILL.md`,
+`references/`, `scripts/`, `assets/`. It never holds generated output.
+
+All **generated state** — dated audit records, reports, any filled-in artifact a run
+produces — lives in `docs/`. A skill may *read* prior state from `docs/` by path; it never
+*contains* it.
+
+The distinction that keeps this clean:
+- A **template** (the empty shape of an output) is reusable instruction → it lives in the
+  skill's `references/<format>.md`.
+- An **instance** (the filled-in output) is state → it lives in `docs/<name>.md`.
+
+Putting a generated file inside a skill folder breaks the skill's reusability: the folder
+mutates per run and stops being stable instruction. **Skill folder = *how* (reusable).
+`docs/` = *what happened* (dated, mutable).**
+
+### Vendored-skill metadata
+
+Skills carry provenance in their frontmatter `metadata` block. Per the spec, metadata
+values are flat strings. The stamp differs by where the skill lives, because a copy needs
+to know where it came from but the source does not:
+
+- **Canonical enterprise skill** (in `wolvryn-skills`) — `skill_version` only. It is the
+  source; a `source_commit` pointing at itself is meaningless.
+- **Vendored copy** (in an app's `.claude/skills/`) — `skill_version` plus the provenance
+  added at vendoring time:
+
+  ```yaml
+  metadata:
+    skill_version: "1.1"
+    source_repo: "wolvryn-skills"
+    source_commit: "<short-sha>"
+  ```
+
+- **App skill** (`<app>-*`, authored in the app repo) — `skill_version` only. It is not
+  vendored from elsewhere.
+
+The stamp lets the sync tooling — and a human — tell at a glance whether an app's vendored
+copy is behind canonical, without diffing file contents.
+
+### Vendoring reality
+
+The copies of `wolvryn-*` skills under an app's `.claude/skills/` are vendored snapshots of
+`wolvryn-skills`. Sync is currently **manual**: pull `wolvryn-skills`, copy the `wolvryn-*`
+directories into the app, update each copy's `source_commit`. A pull-and-distribute tool
+that automates this — producing both the flat upload copies (canonical → `<name>-SKILL.md`)
+and the app directory copies (canonical → `<app>/.claude/skills/<name>/`) — is a planned
+component. Until it exists, the discipline is manual and the rule holds regardless:
+**if an app's vendored copy ever conflicts with `wolvryn-skills`, the `wolvryn-skills`
+version wins.** Vendored skills and flat copies are *generated*, never hand-maintained.
 
 ---
 
@@ -295,6 +405,9 @@ Every Wolvryn project begins the same way, before any application code:
    session start. It owns working state only — never decisions (ADRs) or architecture
    (ARCHITECTURE.md), which it points at. The architect maintains it; it is committed so it
    travels with the repo as portable, durable memory of where work stands.
+8. **Vendor the enterprise skills.** Copy the current `wolvryn-*` skills from
+   `wolvryn-skills` into `.claude/skills/`, stamping each copy's `source_commit`. App
+   skills (`<app>-*`) are authored as needed thereafter. See Skill Architecture.
 
 ---
 

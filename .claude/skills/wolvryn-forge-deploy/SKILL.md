@@ -1,6 +1,10 @@
 ---
 name: wolvryn-forge-deploy
 description: Production deployment checklist for Wolvryn FORGE products. Infrastructure verification, OAuth setup, smoke tests, and common gotchas. Use when deploying to production for the first time, setting up a new environment, or troubleshooting deploy issues. Triggers on "deploy", "production", "go live", "launch", or environment setup discussions.
+metadata:
+  skill_version: "1.0"
+  source_repo: "wolvryn-skills"
+  source_commit: "b1abde1"
 ---
 
 # Wolvryn FORGE — Deployment Standards

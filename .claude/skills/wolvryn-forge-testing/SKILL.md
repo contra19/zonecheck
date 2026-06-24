@@ -1,6 +1,10 @@
 ---
 name: wolvryn-forge-testing
 description: Testing standards for all Wolvryn FORGE products. Coverage expectations, mock patterns, edge-case rules, and test quality standards. Use alongside wolvryn-forge core when writing tests, reviewing test coverage, or running audits. Triggers when writing tests, discussing coverage, or reviewing test files.
+metadata:
+  skill_version: "1.0"
+  source_repo: "wolvryn-skills"
+  source_commit: "b1abde1"
 ---
 
 # Wolvryn FORGE — Testing Standards
