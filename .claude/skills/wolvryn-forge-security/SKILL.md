@@ -4,7 +4,7 @@ description: Security principles for all Wolvryn FORGE products. Identity trust 
 metadata:
   skill_version: "1.0"
   source_repo: "wolvryn-skills"
-  source_commit: "b1abde1"
+  source_commit: "da6420e"
 ---
 
 # Wolvryn FORGE — Security Standards

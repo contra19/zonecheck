@@ -4,7 +4,7 @@ description: Testing standards for all Wolvryn FORGE products. Coverage expectat
 metadata:
   skill_version: "1.0"
   source_repo: "wolvryn-skills"
-  source_commit: "b1abde1"
+  source_commit: "da6420e"
 ---
 
 # Wolvryn FORGE — Testing Standards

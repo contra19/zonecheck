@@ -4,7 +4,7 @@ description: Core development identity and philosophy for all Wolvryn FORGE prod
 metadata:
   skill_version: "1.1"
   source_repo: "wolvryn-skills"
-  source_commit: "b1abde1"
+  source_commit: "da6420e"
 ---
 
 # Wolvryn FORGE — Core Standards
